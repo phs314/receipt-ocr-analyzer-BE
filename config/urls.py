@@ -38,7 +38,8 @@ schema_view = get_schema_view(
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('api.urls')),  # API URL 패턴 추가
-
+    path('', include('main.urls')),  # 메인 앱 URL 패턴 추가
+    
     # Swagger UI URLs
     re_path(r'^swagger(?P<format>\.json|\.yaml)$', schema_view.without_ui(cache_timeout=0), name='schema-json'),
     re_path(r'^swagger/$', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),

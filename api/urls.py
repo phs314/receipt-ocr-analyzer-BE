@@ -2,9 +2,12 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
 
+app_name = 'api'
+
 router = DefaultRouter()
-router.register('', views.ReceiptViewSet, 'upload')
+router.register('receipt', views.ReceiptViewSet, 'receipt')
+router.register('participant', views.ParticipantViewSet, 'participant')
 
 urlpatterns = [
-    path('receipt/', include(router.urls)),  # 영수증 업로드 API
+    path('', include(router.urls)),  # 영수증 업로드 API
 ]

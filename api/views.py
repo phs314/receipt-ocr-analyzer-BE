@@ -1,31 +1,47 @@
-from django.shortcuts import render, redirect
-from django.http import JsonResponse
-from rest_framework.decorators import api_view , action
+from django.shortcuts import render
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework import viewsets
+from drf_yasg.utils import swagger_auto_schema
 from django.conf import settings
-from .models import Receipt
-from .serializers import ReceiptSerializer
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
+from .models import Receipt, Participant
+from .serializers import ReceiptSerializer, ParticipantSerializer
 import os
 import uuid
-import datetime
 
 class ReceiptViewSet(viewsets.ModelViewSet):
+    """
+    영수증 API ViewSet
+    
+    영수증 이미지를 관리하고 OCR 분석 기능을 제공합니다.
+    """
     queryset = Receipt.objects.all()
     serializer_class = ReceiptSerializer
 
-    @action(detail=False, methods=['GET', 'POST'] , url_path='upload')
+    @method_decorator(csrf_exempt, name='dispatch')
+    @action(detail=False, methods=['POST'] , url_path='upload')
     def upload_receipt(self, request):
         """
-        영수증 이미지 업로드 API 및 페이지
-        GET: 업로드 페이지 렌더링
-        POST: 영수증 이미지 처리
-        """
-        # GET 요청일 경우 업로드 페이지 렌더링
-        if request.method == 'GET':
-            return render(request, 'api/receipt_test.html')
+        영수증 이미지 업로드 API
         
+        ---
+        ## GET
+        영수증 업로드 페이지를 렌더링합니다.
+        
+        ## POST
+        영수증 이미지를 업로드하고 처리합니다.
+        
+        ### Request Body
+        - `image`: 영수증 이미지 파일 (필수, JPEG/PNG)
+        
+        ### Responses
+        - 201: 성공적으로 업로드됨
+        - 400: 잘못된 요청 (이미지 없음 또는 형식 오류)
+        - 500: 서버 오류
+        """
         # POST 요청일 경우 업로드 처리
         try:
             if 'image' not in request.FILES:
@@ -51,19 +67,20 @@ class ReceiptViewSet(viewsets.ModelViewSet):
                 for chunk in image.chunks():
                     destination.write(chunk)
             
-            # Receipt 모델에 저장 - MySQL DB에 저장
-            receipt = Receipt.objects.create(
-                file_name=original_filename,
-                image_path=file_path
-            )
-            
-            # 응답 데이터 생성을 위한 시리얼라이저 사용
-            response_serializer = ReceiptSerializer(receipt, context={'request': request})
+            # serializer를 사용해 저장
+            data = {
+                'file_name': original_filename,
+                'image_path': file_path,
+                # 필요한 추가 필드가 있다면 여기에 포함
+            }
+            serializer = ReceiptSerializer(data=data)
+            serializer.is_valid(raise_exception=True)
+            receipt = serializer.save()
             
             return Response({
                 'success': True,
                 'message': '영수증이 성공적으로 업로드되었습니다.',
-                'data': response_serializer.data
+                'data': serializer.data
             }, status=status.HTTP_201_CREATED)
         
         except Exception as e:
@@ -71,3 +88,25 @@ class ReceiptViewSet(viewsets.ModelViewSet):
                 'success': False,
                 'error': f'업로드 중 오류가 발생했습니다: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+class ParticipantViewSet(viewsets.ModelViewSet):
+    """
+    참가자 API ViewSet
+    
+    영수증 분석에 참여하는 사용자를 관리합니다.
+    """
+    queryset = Participant.objects.all()
+    serializer_class = ParticipantSerializer
+
+    @method_decorator(csrf_exempt, name='dispatch')
+    def create(self, request, *args, **kwargs):
+        """참가자 생성 메서드 오버라이드"""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        participant = serializer.save()
+        
+        return Response({
+            'success': True,
+            'message': '참가자가 성공적으로 추가되었습니다.',
+            'data': serializer.data
+        }, status=status.HTTP_201_CREATED)
