@@ -3,6 +3,11 @@ from django.utils import timezone
 
 # Create your models here.
 class Receipt(models.Model):
+    """
+    영수증 모델
+    
+    업로드된 영수증 이미지 정보를 저장합니다.
+    """
     id = models.AutoField(primary_key=True)
     file_name = models.CharField(max_length=255)
     upload_time = models.DateTimeField(default=timezone.now)
