@@ -6,4 +6,5 @@ app_name = 'main'
 urlpatterns = [
     path('', views.index, name='index'),
     path('receipt/', views.receipt_upload_page, name='receipt_upload_page'),  # 추가
+    path('settlement/', views.settlement_page, name='settlement_page'),
 ]

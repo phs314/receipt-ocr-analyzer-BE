@@ -7,8 +7,12 @@ from drf_yasg.utils import swagger_auto_schema
 from django.conf import settings
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
-from .models import Receipt, Participant
-from .serializers import ReceiptSerializer, ParticipantSerializer
+from .models import Receipt, Participant, ReceiptInfo
+from .serializers import ReceiptSerializer, ParticipantSerializer, ReceiptInfoSerializer
+from api.ocr_pipeline.preprocessing import preprocess_image_to_memory
+from api.ocr_pipeline.image_to_text import ocr_image_from_memory
+from api.ocr_pipeline.process_text import TextPostProcessor
+from api.ocr_pipeline.extract_item import extract_menu_items_from_lines
 import os
 import uuid
 
@@ -110,3 +114,59 @@ class ParticipantViewSet(viewsets.ModelViewSet):
             'message': '참가자가 성공적으로 추가되었습니다.',
             'data': serializer.data
         }, status=status.HTTP_201_CREATED)
+    
+class ReceiptInfoViewSet(viewsets.ModelViewSet):
+    """
+    영수증 상세 정보(품목) API ViewSet
+    """
+    queryset = ReceiptInfo.objects.all()
+    serializer_class = ReceiptInfoSerializer
+
+    @action(detail=False, methods=['get'], url_path='analyze')
+    def analyze_receipts(self, request):
+        """
+        GET /api/receiptinfo/analyze/
+        tmp 파이프라인 전체 실행 후 JSON 결과를 ReceiptInfoSerializer로 직렬화해 반환
+        """
+        try:
+            receipts = Receipt.objects.all()
+            serialized_items = []
+            processor = TextPostProcessor(dict_path=os.path.join(settings.BASE_DIR, 'tmp', 'dictionary.txt'))
+
+            for receipt in receipts:
+                img_path = os.path.join(settings.MEDIA_ROOT, receipt.image_path)
+                base_name = receipt.file_name
+                try:
+                    # 1. 전처리
+                    cropped_bin = preprocess_image_to_memory(img_path)
+                    if cropped_bin is None:
+                        continue
+
+                    # 2. OCR
+                    ocr_results = ocr_image_from_memory(cropped_bin)
+
+                    # 3. 후처리
+                    processed_lines = processor.process_lines(ocr_results)
+
+                    # 4. 품목 추출
+                    result = extract_menu_items_from_lines(processed_lines)
+                    for item in result["items"]:
+                        data = {
+                            "receipt": receipt.id,
+                            "store_name": result["store_name"],
+                            "item_name": item["item_name"],
+                            "quantity": item["quantity"],
+                            "unit_price": item["unit_price"],
+                            "total_amount": item["total_amount"],
+                        }
+                        serializer = ReceiptInfoSerializer(data=data)
+                        serializer.is_valid(raise_exception=True)
+                        serializer.save()
+                        serialized_items.append(serializer.data)
+                except Exception as e:
+                    print(f"❌ {base_name} 처리 실패: {e}")
+                    continue
+
+            return Response({'success': True, 'results': serialized_items})
+        except Exception as e:
+            return Response({'success': False, 'error': str(e)}, status=500)
