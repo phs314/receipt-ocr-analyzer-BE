@@ -5,67 +5,71 @@
     <title>PayCheck - 결제 내역</title>
     <style>
         body {
-            background: #f5f5f5;
-            font-family: 'Noto Sans KR', Arial, sans-serif;
-            color: #555;
+            background: #ededed;
+            font-family: 'Pretendard', 'Malgun Gothic', sans-serif;
             margin: 0;
             padding: 0;
         }
         .main-container {
-            max-width: 900px;
+            max-width: 700px;
             margin: 0 auto;
-            padding: 30px 0 60px 0;
+            background: #f8f9fa;
+            border-radius: 18px;
+            box-shadow: 0 2px 12px #0001;
+            padding: 36px 36px 60px 36px;
+            margin-top: 32px;
         }
         .logo-bar {
-            font-size: 1.7rem;
-            font-weight: 700;
-            color: #444;
-            margin-bottom: 16px;
-            letter-spacing: 1px;
+            font-weight: 900;
+            font-size: 1.3rem;
+            margin-bottom: 18px;
+            letter-spacing: -1px;
         }
         h2 {
             text-align: center;
-            font-size: 2rem;
-            font-weight: 700;
-            margin: 30px 0 36px 0;
-            color: #55585c;
-        }
-        .receipt-block {
-            margin-bottom: 38px;
+            margin-bottom: 32px;
+            color: #444;
         }
         .store-name {
-            font-size: 1.2rem;
+            font-size: 1.1rem;
             font-weight: 700;
-            color: #6dc46d;
-            margin-bottom: 10px;
-            margin-top: 30px;
+            color: #6cc36c;
+            margin: 24px 0 8px 0;
         }
         table {
             width: 100%;
-            border-collapse: separate;
-            border-spacing: 0 8px;
-            margin-bottom: 10px;
+            border-collapse: collapse;
+            margin-bottom: 16px;
         }
         th, td {
+            padding: 8px 6px;
             text-align: center;
-            font-size: 1.08rem;
         }
         th {
-            color: #888;
+            background: #f3f7ff;
+            color: #4e73df;
             font-weight: 700;
-            background: none;
+            border-bottom: 1px solid #b2cdfa;
         }
         td {
             background: #fff;
-            border-radius: 8px;
-            padding: 8px 0;
+            font-size: 1.05rem;
+            border-bottom: 1px solid #eee;
         }
-        .participant-cell {
-            min-width: 120px;
+        .participant-tag {
+            display: inline-block;
+            background: #f3f7ff;
+            color: #4e73df;
+            border: 1px solid #b2cdfa;
+            border-radius: 16px;
+            padding: 3px 10px 3px 10px;
+            margin-right: 4px;
+            margin-bottom: 2px;
+            font-size: 1rem;
         }
         .participant-input {
-            width: 90%;
-            padding: 5px 8px;
+            width: 120px;
+            padding: 3px 8px;
             border-radius: 8px;
             border: 1px solid #b2cdfa;
             font-size: 1rem;
@@ -77,6 +81,22 @@
             color: #4e73df;
             margin: 18px 0 0 0;
         }
+        .settlement-result {
+            margin-top: 40px;
+            text-align: center;
+        }
+        .settlement-result .participant-tag {
+            margin-right: 8px;
+        }
+        .settlement-result-amount {
+            color: #4e73df;
+            font-size: 1.2rem;
+            font-weight: 700;
+            margin-left: 8px;
+        }
+        .receipt-block {
+            margin-bottom: 18px;
+        }
     </style>
 </head>
 <body>
@@ -84,25 +104,41 @@
     <div class="logo-bar">PayCheck</div>
     <h2>결제 내역</h2>
     <div id="receipt-list"></div>
+    <div class="total-amount" id="total-amount"></div>
+    <div class="settlement-result" id="settlement-result"></div>
 </div>
 <script>
-async function fetchReceipts() {
-    // 실제 API 엔드포인트에 맞게 수정하세요
+let allParticipants = []; // 전체 참여자 목록(자동완성 등에서 활용 가능)
+let storeGroups = {};     // {store_name: [item, ...]}
+let itemParticipants = {}; // {item_id: [참여자명, ...]}
+
+// 1. 데이터 불러오기 및 그룹화
+async function fetchAndRender() {
     const res = await fetch('/api/receiptinfo/analyze/');
     const data = await res.json();
-    return data.results || [];
+    const items = data.results || [];
+
+    // 가게별로 묶기
+    storeGroups = {};
+    items.forEach(item => {
+        if (!storeGroups[item.store_name]) storeGroups[item.store_name] = [];
+        storeGroups[item.store_name].push(item);
+        itemParticipants[item.id] = []; // 초기화
+    });
+
+    renderReceipts();
+    updateTotal();
+    updateSettlement();
 }
 
-function renderReceipts(receipts) {
+// 2. 결제 내역 렌더링
+function renderReceipts() {
     const container = document.getElementById('receipt-list');
     container.innerHTML = '';
-    receipts.forEach(receipt => {
-        // 상호명
-        const storeName = receipt.store_name || receipt.filename || '상호명 없음';
-        // 품목 테이블
+    Object.entries(storeGroups).forEach(([store, items]) => {
         let html = `
             <div class="receipt-block">
-                <div class="store-name">${storeName}</div>
+                <div class="store-name">${store}</div>
                 <table>
                     <thead>
                         <tr>
@@ -114,14 +150,17 @@ function renderReceipts(receipts) {
                     </thead>
                     <tbody>
         `;
-        receipt.items.forEach(item => {
+        items.forEach(item => {
             html += `
                 <tr>
-                    <td>${item.menu}</td>
+                    <td>${item.item_name}</td>
                     <td>${item.quantity}</td>
-                    <td>${item.amount}</td>
+                    <td>${item.total_amount}</td>
                     <td class="participant-cell">
-                        <input class="participant-input" type="text" placeholder="참여자 입력">
+                        <div id="tags-${item.id}">
+                            ${(itemParticipants[item.id]||[]).map(name => `<span class="participant-tag">${name} <span onclick="removeParticipant(${item.id},'${name}')" style="cursor:pointer;">×</span></span>`).join('')}
+                        </div>
+                        <input class="participant-input" type="text" placeholder="참여자 입력" onkeydown="if(event.key==='Enter'){addParticipant(${item.id}, this.value); this.value='';}">
                     </td>
                 </tr>
             `;
@@ -129,17 +168,66 @@ function renderReceipts(receipts) {
         html += `
                     </tbody>
                 </table>
-                <div class="total-amount">총액&nbsp;&nbsp;${receipt.total_amount}원</div>
             </div>
         `;
         container.innerHTML += html;
     });
 }
 
-document.addEventListener('DOMContentLoaded', async function() {
-    const receipts = await fetchReceipts();
-    renderReceipts(receipts);
-});
+// 3. 참여자 추가/삭제
+window.addParticipant = function(itemId, name) {
+    name = name.trim();
+    if (!name) return;
+    if (!itemParticipants[itemId].includes(name)) {
+        itemParticipants[itemId].push(name);
+        renderReceipts();
+        updateSettlement();
+    }
+};
+window.removeParticipant = function(itemId, name) {
+    itemParticipants[itemId] = itemParticipants[itemId].filter(n => n !== name);
+    renderReceipts();
+    updateSettlement();
+};
+
+// 4. 총액 계산
+function updateTotal() {
+    let total = 0;
+    Object.values(storeGroups).forEach(items => {
+        items.forEach(item => total += item.total_amount);
+    });
+    document.getElementById('total-amount').innerHTML = `총액&nbsp;&nbsp;${total.toLocaleString()}원`;
+}
+
+// 5. 정산 결과 계산 및 출력
+function updateSettlement() {
+    // {참여자명: 금액}
+    const result = {};
+    Object.entries(storeGroups).forEach(([store, items]) => {
+        items.forEach(item => {
+            const names = itemParticipants[item.id];
+            if (names && names.length > 0) {
+                const share = Math.floor(item.total_amount / names.length);
+                names.forEach(name => {
+                    result[name] = (result[name] || 0) + share;
+                });
+            }
+        });
+    });
+    // 렌더링
+    const resultDiv = document.getElementById('settlement-result');
+    if (Object.keys(result).length === 0) {
+        resultDiv.innerHTML = '';
+        return;
+    }
+    let html = `<h3>정산 결과</h3>`;
+    Object.entries(result).forEach(([name, amount]) => {
+        html += `<span class="participant-tag">${name}</span><span class="settlement-result-amount">${amount.toLocaleString()}원</span><br>`;
+    });
+    resultDiv.innerHTML = html;
+}
+
+document.addEventListener('DOMContentLoaded', fetchAndRender);
 </script>
 </body>
 </html>
