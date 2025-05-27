@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <title>PayCheck</title>
+    <style>
+        body {
+            background: #f5f5f5;
+            font-family: 'Noto Sans KR', Arial, sans-serif;
+            color: #555;
+            margin: 0;
+            padding: 0;
+        }
+        .main-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            justify-content: center;
+        }
+        .logo-bar {
+            width: 100%;
+            text-align: left;
+            padding: 30px 0 0 40px;
+            font-size: 2.1rem;
+            font-weight: 700;
+            color: #444;
+            letter-spacing: 1px;
+        }
+        .section {
+            background: #fff;
+            border-radius: 18px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            padding: 36px 32px 32px 32px;
+            margin: 30px 0 0 0;
+            min-width: 350px;
+            max-width: 380px;
+            text-align: center;
+        }
+        h1 {
+            font-size: 1.7rem;
+            font-weight: 700;
+            margin-bottom: 24px;
+            color: #55585c;
+        }
+        .upload-container {
+            margin-bottom: 24px;
+        }
+        .upload-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: #6ea8fe;
+            color: #fff;
+            font-size: 2rem;
+            width: 48px;
+            height: 48px;
+            border-radius: 14px;
+            border: none;
+            cursor: pointer;
+            margin-bottom: 10px;
+            transition: background 0.2s;
+        }
+        .upload-btn:hover {
+            background: #4e73df;
+        }
+        .upload-text {
+            font-size: 1.1rem;
+            color: #888;
+            margin-left: 10px;
+            display: inline-block;
+            vertical-align: middle;
+        }
+        #receipt-images {
+            display: none;
+        }
+        .preview-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .image-preview-wrapper {
+            position: relative;
+            width: 80px;
+            height: 80px;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid #e0e0e0;
+            background: #fff;
+        }
+        .image-preview {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .remove-btn {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background: #fff;
+            color: #ff4444;
+            border: none;
+            border-radius: 50%;
+            width: 22px;
+            height: 22px;
+            font-size: 1rem;
+            cursor: pointer;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+        }
+        .paycheck-btn {
+            background: #4e73df;
+            color: #fff;
+            border: none;
+            border-radius: 12px;
+            padding: 13px 0;
+            width: 100%;
+            font-size: 1.2rem;
+            font-weight: 700;
+            margin-top: 20px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .paycheck-btn:hover {
+            background: #3456b1;
+        }
+        .participant-container {
+            margin: 0 auto;
+            max-width: 320px;
+            background: #fff;
+            border-radius: 16px;
+            padding: 18px 10px 10px 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }
+        .participant-input-group {
+            display: flex;
+            margin-bottom: 12px;
+        }
+        .participant-input {
+            flex: 1;
+            padding: 10px 12px;
+            border: 1px solid #d0d7e2;
+            border-radius: 10px 0 0 10px;
+            font-size: 1rem;
+            outline: none;
+        }
+        .add-btn {
+            background: #6ea8fe;
+            color: #fff;
+            border: none;
+            border-radius: 0 10px 10px 0;
+            padding: 0 18px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .add-btn:hover {
+            background: #4e73df;
+        }
+        .participant-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 8px;
+            min-height: 36px;
+        }
+        .participant-tag {
+            background: #f3f7ff;
+            color: #4e73df;
+            border: 1px solid #b2cdfa;
+            border-radius: 16px;
+            padding: 5px 14px 5px 10px;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+        }
+        .remove-tag {
+            color: #4e73df;
+            margin-left: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 1.1rem;
+        }
+        #loading, #response {
+            margin-top: 10px;
+            font-size: 0.95rem;
+        }
+        .footer {
+            margin-top: 40px;
+            color: #aaa;
+            font-size: 1rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+<div class="main-container">
+    <div class="logo-bar">
+        <span style="font-family:monospace; font-size:1.5rem;">&#9646;&#9646;&#9646;&#9646;&#9646;</span>
+        PayCheck
+    </div>
+    <div class="section">
+        <h1>영수증 이미지 첨부</h1>
+        <div class="upload-container">
+            <input type="file" id="receipt-images" multiple accept="image/jpeg,image/png,image/jpg">
+            <label for="receipt-images" class="upload-btn">+</label>
+            <span class="upload-text">이미지를 첨부하세요</span>
+        </div>
+        <div class="preview-container" id="preview-container"></div>
+        <div id="loading" style="display:none;">업로드 중... 잠시만 기다려주세요.</div>
+        <div id="response" style="display:none;">여기에 응답 결과가 표시됩니다.</div>
+        <button id="submit-button" class="paycheck-btn" style="display: none;">PayCheck</button>
+    </div>
+
+    <div class="section" style="margin-top:30px;">
+        <h1>참여자 리스트</h1>
+        <div class="participant-container">
+            <div class="participant-input-group">
+                <input type="text" id="participant-name" class="participant-input" placeholder="참여자 이름을 입력하세요">
+                <button id="add-participant" class="add-btn">추가</button>
+            </div>
+            <div class="participant-list" id="participant-list"></div>
+        </div>
+    </div>
+    <div class="footer">ChillGuys!</div>
+</div>
+<!-- 기존 JS 코드 그대로 사용 -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // CSRF 토큰 읽기 함수
+    function getCSRFToken() {
+        return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    }
+
+    // 이미지 업로드 관련
+    const fileInput = document.getElementById('receipt-images');
+    const previewContainer = document.getElementById('preview-container');
+    const submitButton = document.getElementById('submit-button');
+    const loadingDiv = document.getElementById('loading');
+    const responseDiv = document.getElementById('response');
+    let selectedFiles = [];
+
+    // 참가자 관련
+    const participantInput = document.getElementById('participant-name');
+    const addParticipantBtn = document.getElementById('add-participant');
+    const participantListDiv = document.getElementById('participant-list');
+    let participants = [];
+
+    // 이미지 파일 선택 이벤트
+    fileInput.addEventListener('change', function(e) {
+        const newFiles = Array.from(e.target.files);
+        selectedFiles = [...selectedFiles, ...newFiles];
+        updatePreview();
+        updateSubmitButton();
+    });
+
+    // 이미지 미리보기
+    function updatePreview() {
+        previewContainer.innerHTML = '';
+        selectedFiles.forEach((file, index) => {
+            const previewWrapper = document.createElement('div');
+            previewWrapper.className = 'image-preview-wrapper';
+            const img = document.createElement('img');
+            img.className = 'image-preview';
+            img.alt = '영수증 미리보기';
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'remove-btn';
+            removeBtn.innerHTML = '×';
+            removeBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                selectedFiles.splice(index, 1);
+                updatePreview();
+                updateSubmitButton();
+            });
+            const reader = new FileReader();
+            reader.onload = (e) => { img.src = e.target.result; };
+            reader.readAsDataURL(file);
+            previewWrapper.appendChild(img);
+            previewWrapper.appendChild(removeBtn);
+            previewContainer.appendChild(previewWrapper);
+        });
+    }
+
+    function updateSubmitButton() {
+        submitButton.style.display = selectedFiles.length > 0 ? 'block' : 'none';
+    }
+
+    // PayCheck 버튼 클릭 시 이미지 업로드
+    submitButton.addEventListener('click', async function() {
+        if (selectedFiles.length === 0) {
+            alert('업로드할 영수증 이미지를 선택해주세요.');
+            return;
+        }
+        loadingDiv.style.display = 'block';
+        responseDiv.style.display = 'block';
+        responseDiv.textContent = '업로드 중...';
+        try {
+            const results = [];
+            for (let i = 0; i < selectedFiles.length; i++) {
+                const formData = new FormData();
+                formData.append('image', selectedFiles[i]);
+                const response = await fetch('/api/receipt/upload/', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': getCSRFToken()
+                    },
+                    body: formData
+                });
+                const data = await response.json();
+                results.push(data);
+            }
+            responseDiv.textContent = JSON.stringify(results, null, 2);
+
+            // 업로드가 끝나면 settlement로 이동
+            window.location.href = '/settlement/';
+        } catch (error) {
+            responseDiv.textContent = '오류 발생: ' + error.message;
+        } finally {
+            loadingDiv.style.display = 'none';
+        }
+    });
+
+    // 참가자 추가 버튼 클릭
+    addParticipantBtn.addEventListener('click', addParticipant);
+    participantInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') addParticipant();
+    });
+
+    function addParticipant() {
+        const name = participantInput.value.trim();
+        if (!name) return;
+        // API로 참가자 추가
+        fetch('/api/participant/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCSRFToken()
+            },
+            body: JSON.stringify({ name })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                participants.push({ id: data.data.id, name: data.data.name });
+                updateParticipantList();
+                participantInput.value = '';
+            } else {
+                alert('참가자 추가 실패: ' + (data.message || JSON.stringify(data)));
+            }
+        })
+        .catch(err => alert('참가자 추가 오류: ' + err));
+    }
+
+    function updateParticipantList() {
+        participantListDiv.innerHTML = '';
+        participants.forEach((p, idx) => {
+            const tag = document.createElement('div');
+            tag.className = 'participant-tag';
+            tag.innerHTML = `${p.name} <span class="remove-tag" style="cursor:pointer;">×</span>`;
+            tag.querySelector('.remove-tag').onclick = () => {
+                participants.splice(idx, 1);
+                updateParticipantList();
+            };
+            participantListDiv.appendChild(tag);
+        });
+    }
+});
+</script>
+</body>
+</html>

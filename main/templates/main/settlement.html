@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>PayCheck - 결제 내역</title>
+    <style>
+        body {
+            background: #f5f5f5;
+            font-family: 'Noto Sans KR', Arial, sans-serif;
+            color: #555;
+            margin: 0;
+            padding: 0;
+        }
+        .main-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 30px 0 60px 0;
+        }
+        .logo-bar {
+            font-size: 1.7rem;
+            font-weight: 700;
+            color: #444;
+            margin-bottom: 16px;
+            letter-spacing: 1px;
+        }
+        h2 {
+            text-align: center;
+            font-size: 2rem;
+            font-weight: 700;
+            margin: 30px 0 36px 0;
+            color: #55585c;
+        }
+        .receipt-block {
+            margin-bottom: 38px;
+        }
+        .store-name {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #6dc46d;
+            margin-bottom: 10px;
+            margin-top: 30px;
+        }
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0 8px;
+            margin-bottom: 10px;
+        }
+        th, td {
+            text-align: center;
+            font-size: 1.08rem;
+        }
+        th {
+            color: #888;
+            font-weight: 700;
+            background: none;
+        }
+        td {
+            background: #fff;
+            border-radius: 8px;
+            padding: 8px 0;
+        }
+        .participant-cell {
+            min-width: 120px;
+        }
+        .participant-input {
+            width: 90%;
+            padding: 5px 8px;
+            border-radius: 8px;
+            border: 1px solid #b2cdfa;
+            font-size: 1rem;
+        }
+        .total-amount {
+            text-align: right;
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #4e73df;
+            margin: 18px 0 0 0;
+        }
+    </style>
+</head>
+<body>
+<div class="main-container">
+    <div class="logo-bar">PayCheck</div>
+    <h2>결제 내역</h2>
+    <div id="receipt-list"></div>
+</div>
+<script>
+async function fetchReceipts() {
+    // 실제 API 엔드포인트에 맞게 수정하세요
+    const res = await fetch('/api/receiptinfo/analyze/');
+    const data = await res.json();
+    return data.results || [];
+}
+
+function renderReceipts(receipts) {
+    const container = document.getElementById('receipt-list');
+    container.innerHTML = '';
+    receipts.forEach(receipt => {
+        // 상호명
+        const storeName = receipt.store_name || receipt.filename || '상호명 없음';
+        // 품목 테이블
+        let html = `
+            <div class="receipt-block">
+                <div class="store-name">${storeName}</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>품목</th>
+                            <th>수량</th>
+                            <th>금액</th>
+                            <th>참여자</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        receipt.items.forEach(item => {
+            html += `
+                <tr>
+                    <td>${item.menu}</td>
+                    <td>${item.quantity}</td>
+                    <td>${item.amount}</td>
+                    <td class="participant-cell">
+                        <input class="participant-input" type="text" placeholder="참여자 입력">
+                    </td>
+                </tr>
+            `;
+        });
+        html += `
+                    </tbody>
+                </table>
+                <div class="total-amount">총액&nbsp;&nbsp;${receipt.total_amount}원</div>
+            </div>
+        `;
+        container.innerHTML += html;
+    });
+}
+
+document.addEventListener('DOMContentLoaded', async function() {
+    const receipts = await fetchReceipts();
+    renderReceipts(receipts);
+});
+</script>
+</body>
+</html>
