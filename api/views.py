@@ -126,47 +126,60 @@ class ReceiptInfoViewSet(viewsets.ModelViewSet):
     def analyze_receipts(self, request):
         """
         GET /api/receiptinfo/analyze/
-        tmp 파이프라인 전체 실행 후 JSON 결과를 ReceiptInfoSerializer로 직렬화해 반환
+        업로드된 Receipt 객체의 이미지 각각에 대해 OCR 파이프라인을 실행하고,
+        추출된 품목 정보를 ReceiptInfo로 저장 및 직렬화해 반환
         """
         try:
+            # Receipt 테이블에서 모든 영수증 객체 불러오기
             receipts = Receipt.objects.all()
+            if not receipts.exists():
+                return Response({'success': False, 'error': '분석할 영수증이 없습니다.'}, status=400)
+
+            processor = TextPostProcessor(dict_path=os.path.join(settings.BASE_DIR, 'api', 'ocr_pipeline', 'dictionary.txt'))
+            store_processor = TextPostProcessor(dict_path=os.path.join(settings.BASE_DIR, 'api', 'ocr_pipeline', 'dictionary_store.txt'))
+            item_processor = TextPostProcessor(dict_path=os.path.join(settings.BASE_DIR, 'api', 'ocr_pipeline', 'dictionary_item.txt'))
             serialized_items = []
-            processor = TextPostProcessor(dict_path=os.path.join(settings.BASE_DIR, 'tmp', 'dictionary.txt'))
 
             for receipt in receipts:
-                img_path = os.path.join(settings.MEDIA_ROOT, receipt.image_path)
-                base_name = receipt.file_name
-                try:
-                    # 1. 전처리
-                    cropped_bin = preprocess_image_to_memory(img_path)
-                    if cropped_bin is None:
-                        continue
+                image_path = os.path.join(settings.MEDIA_ROOT, receipt.image_path)
+                if not os.path.exists(image_path):
+                    continue  # 이미지 파일이 없으면 건너뜀
+                
+                print(f"🔎 [{receipt.id}] 이미지 처리 시작: {image_path}")
 
-                    # 2. OCR
-                    ocr_results = ocr_image_from_memory(cropped_bin)
+                # 1. 전처리
+                bin_imgs = preprocess_image_to_memory(image_path)
 
-                    # 3. 후처리
-                    processed_lines = processor.process_lines(ocr_results)
+                # 2. OCR
+                ocr_results = ocr_image_from_memory(bin_imgs)
 
-                    # 4. 품목 추출
-                    result = extract_menu_items_from_lines(processed_lines)
-                    for item in result["items"]:
-                        data = {
-                            "receipt": receipt.id,
-                            "store_name": result["store_name"],
-                            "item_name": item["item_name"],
-                            "quantity": item["quantity"],
-                            "unit_price": item["unit_price"],
-                            "total_amount": item["total_amount"],
-                        }
-                        serializer = ReceiptInfoSerializer(data=data)
-                        serializer.is_valid(raise_exception=True)
-                        serializer.save()
-                        serialized_items.append(serializer.data)
-                except Exception as e:
-                    print(f"❌ {base_name} 처리 실패: {e}")
-                    continue
+                # 3. 후처리
+                processed_lines = processor.process_lines(ocr_results)
+                
+                # 4. 품목 추출
+                result = extract_menu_items_from_lines(processed_lines)
+
+                # 5. 가게명/음식명 각각 find_closest_word 적용
+                store_name = result.get("store_name", "")
+                fixed_store_name = store_processor.find_closest_word(store_name, 0.4) or store_name
+                
+                for item in result["items"]:
+                    item_name = item.get("item_name", "")
+                    fixed_item_name = item_processor.find_closest_word(item_name, 0.4) or item_name
+                    data = {
+                        "receipt": receipt.id,
+                        "store_name": fixed_store_name,
+                        "item_name": fixed_item_name,
+                        "quantity": item["quantity"],
+                        "unit_price": item["unit_price"],
+                        "total_amount": item["total_amount"],
+                    }
+                    serializer = ReceiptInfoSerializer(data=data)
+                    serializer.is_valid(raise_exception=True)
+                    instance = serializer.save()
+                    serialized_items.append(ReceiptInfoSerializer(instance).data)
 
             return Response({'success': True, 'results': serialized_items})
+
         except Exception as e:
             return Response({'success': False, 'error': str(e)}, status=500)
