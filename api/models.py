@@ -3,37 +3,54 @@ from django.utils import timezone
 
 # Create your models here.
 class Receipt(models.Model):
-    title = models.CharField(max_length=100, blank=True)
-    image = models.ImageField(upload_to='receipts/')
-    uploaded_at = models.DateTimeField(default=timezone.now)
-    processed = models.BooleanField(default=False)
+    """
+    영수증 모델
+    
+    업로드된 영수증 이미지 정보를 저장합니다.
+    """
+    id = models.AutoField(primary_key=True)
+    file_name = models.CharField(max_length=255)
+    upload_time = models.DateTimeField(default=timezone.now)
+    image_path = models.CharField(max_length=500)
+    
+    class Meta:
+        db_table = 'receipt'  # MySQL 테이블 이름 지정
     
     def __str__(self):
-        return f"Receipt {self.title} ({self.uploaded_at.strftime('%Y-%m-%d %H:%M')})"
+        return f"Receipt {self.file_name} ({self.upload_time.strftime('%Y-%m-%d %H:%M')})"
     
 class ReceiptInfo(models.Model):
-    receipt = models.ForeignKey(Receipt, on_delete=models.CASCADE)
-    store_name = models.CharField(max_length=255)
+    """
+    영수증 상세 정보 모델
+    
+    영수증에서 추출된 각 품목의 상세 정보를 저장합니다.
+    """
+    id = models.AutoField(primary_key=True)
+    receipt = models.ForeignKey(Receipt, on_delete=models.CASCADE, related_name='items')
+    store_name = models.CharField(max_length=255, blank=True, null=True)
     item_name = models.CharField(max_length=255)
     quantity = models.IntegerField()
     unit_price = models.IntegerField()
     total_amount = models.IntegerField()
-
+    
+    class Meta:
+        db_table = 'receipt_info'  # MySQL 테이블 이름 지정
+        
     def __str__(self):
-        return f"{self.item_name} ({self.store_name})"
+        return f"{self.item_name} - {self.quantity}개, {self.total_amount}원 (영수증 ID: {self.id})"
 
 class Participant(models.Model):
-    name = models.CharField(max_length=100)
-
+    """
+    참가자 모델
+    
+    영수증 분석에 참여하는 참가자 정보를 저장합니다.
+    """
+    id = models.AutoField(primary_key=True)
+    name = models.CharField(max_length=100)  # varchar 타입으로 이름 저장
+    
+    class Meta:
+        db_table = 'participant'  # MySQL 테이블 이름 지정
+        
     def __str__(self):
-        return self.name
 
-class Settlement(models.Model):
-    receipt = models.ForeignKey(Receipt, on_delete=models.CASCADE)
-    participants = models.ManyToManyField(Participant)
-    result = models.JSONField()
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"Settlement for Receipt {self.receipt.id}"
-# 푸쉬가안되네요
+        return f"Participant {self.id}: {self.name}"
