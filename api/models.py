@@ -36,3 +36,4 @@ class Settlement(models.Model):
 
     def __str__(self):
         return f"Settlement for Receipt {self.receipt.id}"
+# 푸쉬가안되네요
