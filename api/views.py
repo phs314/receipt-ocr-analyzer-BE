@@ -16,7 +16,7 @@ from api.ocr_pipeline.extract_item import extract_menu_items_from_lines
 import os
 import uuid
 
-class ReceiptViewSet(viewsets.ModelViewSet):
+class ReceiptViewSet(viewsets.ViewSet):
     """
     영수증 API ViewSet
     
@@ -93,7 +93,7 @@ class ReceiptViewSet(viewsets.ModelViewSet):
                 'error': f'업로드 중 오류가 발생했습니다: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
-class ParticipantViewSet(viewsets.ModelViewSet):
+class ParticipantViewSet(viewsets.ViewSet):
     """
     참가자 API ViewSet
     
@@ -105,7 +105,7 @@ class ParticipantViewSet(viewsets.ModelViewSet):
     @method_decorator(csrf_exempt, name='dispatch')
     def create(self, request, *args, **kwargs):
         """참가자 생성 메서드 오버라이드"""
-        serializer = self.get_serializer(data=request.data)
+        serializer = ParticipantSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         participant = serializer.save()
         
@@ -115,7 +115,7 @@ class ParticipantViewSet(viewsets.ModelViewSet):
             'data': serializer.data
         }, status=status.HTTP_201_CREATED)
     
-class ReceiptInfoViewSet(viewsets.ModelViewSet):
+class ReceiptInfoViewSet(viewsets.ViewSet):
     """
     영수증 상세 정보(품목) API ViewSet
     """
