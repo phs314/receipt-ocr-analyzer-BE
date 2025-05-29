@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Receipt, Participant, ReceiptInfo
+from .models import Receipt, Participant, ReceiptInfo, Settlement
 
 class ReceiptSerializer(serializers.ModelSerializer):
     """영수증 모델에 대한 시리얼라이저"""
@@ -18,3 +18,9 @@ class ReceiptInfoSerializer(serializers.ModelSerializer):
     class Meta:
         model = ReceiptInfo
         fields = '__all__'
+
+class SettlementSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Settlement
+        fields = ['id', 'receipt', 'participants', 'result', 'created_at']
