@@ -7,8 +7,8 @@ from drf_yasg.utils import swagger_auto_schema
 from django.conf import settings
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
-from .models import Receipt, Participant, ReceiptInfo
-from .serializers import ReceiptSerializer, ParticipantSerializer, ReceiptInfoSerializer
+from .models import Receipt, Participant, ReceiptInfo, Settlement 
+from .serializers import ReceiptSerializer, ParticipantSerializer, ReceiptInfoSerializer, SettlementSerializer
 from api.ocr_pipeline.preprocessing import preprocess_image_to_memory
 from api.ocr_pipeline.image_to_text import ocr_image_from_memory
 from api.ocr_pipeline.process_text import TextPostProcessor
@@ -180,6 +180,60 @@ class ReceiptInfoViewSet(viewsets.ModelViewSet):
                     serialized_items.append(ReceiptInfoSerializer(instance).data)
 
             return Response({'success': True, 'results': serialized_items})
+
+        except Exception as e:
+            return Response({'success': False, 'error': str(e)}, status=500)
+        
+class SettlementViewSet(viewsets.ModelViewSet):
+    """
+    정산 API ViewSet
+    
+    영수증 기반으로 참가자들의 금액을 정산합니다.
+    """
+    queryset = Settlement.objects.all()
+    serializer_class = SettlementSerializer
+
+    @action(detail=False, methods=['post'], url_path='calculate')
+    def calculate_settlement(self, request):
+        """
+        POST /api/settlement/calculate/
+        정산 계산 수행
+        
+        Request Body 예시:
+        {
+            "receipt_id": 1,
+            "participants": [1, 2, 3]
+        }
+        """
+        try:
+            receipt_id = request.data.get('receipt_id')
+            participant_ids = request.data.get('participants', [])
+
+            if not receipt_id or not participant_ids:
+                return Response({'error': 'receipt_id와 participants는 필수입니다.'}, status=400)
+
+            receipt = Receipt.objects.get(id=receipt_id)
+            items = receipt.items.all()  # related_name='items'를 통해 ReceiptInfo 접근
+            num_participants = len(participant_ids)
+
+            if num_participants == 0 or not items.exists():
+                return Response({'error': '참가자나 항목이 부족합니다.'}, status=400)
+
+            # 전체 금액 계산
+            total = sum(item.total_amount for item in items)
+            share = total // num_participants
+
+            participant_objs = Participant.objects.filter(id__in=participant_ids)
+            result = {p.name: share for p in participant_objs}
+
+            settlement = Settlement.objects.create(receipt=receipt, result=result)
+            settlement.participants.set(participant_objs)
+
+            return Response({
+                'success': True,
+                'message': '정산이 완료되었습니다.',
+                'result': result
+            })
 
         except Exception as e:
             return Response({'success': False, 'error': str(e)}, status=500)

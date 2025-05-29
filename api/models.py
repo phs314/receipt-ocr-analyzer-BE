@@ -54,3 +54,16 @@ class Participant(models.Model):
     def __str__(self):
 
         return f"Participant {self.id}: {self.name}"
+
+class Settlement(models.Model):
+    
+    receipt = models.ForeignKey('Receipt', on_delete=models.CASCADE)
+    participants = models.ManyToManyField('Participant')
+    result = models.JSONField()  # {'홍길동': 3000, '김철수': 3000}
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = 'settlement'  # MySQL 테이블 이름 지정
+
+    def __str__(self):
+        return f"Settlement for Receipt {self.receipt.id} - {self.method}"
