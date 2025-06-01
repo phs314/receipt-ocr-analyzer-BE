@@ -242,7 +242,9 @@ class ReceiptInfoViewSet(viewsets.ViewSet):
                 store_name = result.get("store_name", "")
                 fixed_store_name = store_processor.find_closest_word(store_name, 0.4) or store_name
                 
-                for item in result["items"]:
+                items = result.get("items") or []  # None이면 빈 리스트로 대체
+
+                for item in items:
                     item_name = item.get("item_name", "")
                     fixed_item_name = item_processor.find_closest_word(item_name, 0.4) or item_name
                     data = {
