@@ -117,16 +117,22 @@ class ParticipantViewSet(viewsets.ViewSet):
     serializer_class = ParticipantSerializer
 
     @method_decorator(csrf_exempt, name='dispatch')
-    def create(self, request, *args, **kwargs):
+    def create(self, request):
         """
         참가자 추가 API
 
         ---
-        참가자를 추가합니다.
+        새로운 참가자를 추가합니다.
 
         ### Request Body
-        - `name`: 참가자 이름 (필수)
-        - 기타 필요한 필드
+        - `name`: 참가자 이름 (필수, 문자열)
+
+        ### Request Example
+        ```json
+        {
+            "name": "홍길동"
+        }
+        ```
 
         ### Responses
         - 201: 참가자 추가 성공
@@ -134,26 +140,108 @@ class ParticipantViewSet(viewsets.ViewSet):
             {
                 "success": true,
                 "message": "참가자가 성공적으로 추가되었습니다.",
-                "data": { ... }
+                "data": {
+                    "id": 1,
+                    "name": "홍길동"
+                }
             }
             ```
-        - 400/500: 오류
+        - 400: 잘못된 요청 (이름 누락 또는 형식 오류)
             ```json
             {
                 "success": false,
-                "error": "...에러메시지..."
+                "error": "이름은 필수입니다."
+            }
+            ```
+        - 500: 서버 오류
+            ```json
+            {
+                "success": false,
+                "error": "참가자 추가 중 오류가 발생했습니다: ...에러메시지..."
             }
             ```
         """
-        serializer = ParticipantSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        participant = serializer.save()
+        try:
+            serializer = ParticipantSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            participant = serializer.save()
+            
+            return Response({
+                'success': True,
+                'message': '참가자가 성공적으로 추가되었습니다.',
+                'data': serializer.data
+            }, status=status.HTTP_201_CREATED)
         
-        return Response({
-            'success': True,
-            'message': '참가자가 성공적으로 추가되었습니다.',
-            'data': serializer.data
-        }, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': f'참가자 추가 중 오류가 발생했습니다: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @method_decorator(csrf_exempt, name='dispatch')
+    def list(self, request):
+        """
+        참가자 목록 조회 API
+
+        ---
+        등록된 모든 참가자 목록을 조회합니다.
+
+        ### Request Body
+        - (body 없음) GET 요청이므로 별도의 body를 받지 않습니다.
+
+        ### Responses
+        - 200: 참가자 목록 조회 성공
+            ```json
+            {
+                "success": true,
+                "message": "참가자 목록을 성공적으로 조회했습니다.",
+                "data": [
+                    {
+                        "id": 1,
+                        "name": "홍길동"
+                    },
+                    {
+                        "id": 2,
+                        "name": "김철수"
+                    },
+                    {
+                        "id": 3,
+                        "name": "이영희"
+                    }
+                ]
+            }
+            ```
+        - 200: 참가자가 없는 경우
+            ```json
+            {
+                "success": true,
+                "message": "참가자 목록을 성공적으로 조회했습니다.",
+                "data": []
+            }
+            ```
+        - 500: 서버 오류
+            ```json
+            {
+                "success": false,
+                "error": "참가자 목록 조회 중 오류가 발생했습니다: ...에러메시지..."
+            }
+            ```
+        """
+        try:
+            participants = Participant.objects.all()
+            serializer = ParticipantSerializer(participants, many=True)
+            
+            return Response({
+                'success': True,
+                'message': '참가자 목록을 성공적으로 조회했습니다.',
+                'data': serializer.data
+            }, status=status.HTTP_200_OK)
+        
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': f'참가자 목록 조회 중 오류가 발생했습니다: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
 class ReceiptInfoViewSet(viewsets.ViewSet):
     """
