@@ -30,21 +30,35 @@ class ReceiptViewSet(viewsets.ViewSet):
     def upload_receipt(self, request):
         """
         영수증 이미지 업로드 API
-        
+
         ---
-        ## GET
-        영수증 업로드 페이지를 렌더링합니다.
-        
-        ## POST
-        영수증 이미지를 업로드하고 처리합니다.
-        
+        영수증 이미지를 업로드하고 서버에 저장합니다.
+
         ### Request Body
         - `image`: 영수증 이미지 파일 (필수, JPEG/PNG)
-        
+
         ### Responses
         - 201: 성공적으로 업로드됨
+            ```json
+            {
+                "success": true,
+                "message": "영수증이 성공적으로 업로드되었습니다.",
+                "data": { ... }
+            }
+            ```
         - 400: 잘못된 요청 (이미지 없음 또는 형식 오류)
+            ```json
+            {
+                "error": "이미지 파일이 필요합니다."
+            }
+            ```
         - 500: 서버 오류
+            ```json
+            {
+                "success": false,
+                "error": "업로드 중 오류가 발생했습니다: ...에러메시지..."
+            }
+            ```
         """
         # POST 요청일 경우 업로드 처리
         try:
@@ -96,24 +110,140 @@ class ReceiptViewSet(viewsets.ViewSet):
 class ParticipantViewSet(viewsets.ViewSet):
     """
     참가자 API ViewSet
-    
+
     영수증 분석에 참여하는 사용자를 관리합니다.
     """
     queryset = Participant.objects.all()
     serializer_class = ParticipantSerializer
 
     @method_decorator(csrf_exempt, name='dispatch')
-    def create(self, request, *args, **kwargs):
-        """참가자 생성 메서드 오버라이드"""
-        serializer = ParticipantSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        participant = serializer.save()
+    @action(detail=False, methods=['post'], url_path='create')
+    def create_participant(self, request):
+        """
+        참가자 추가 API
+
+        ---
+        새로운 참가자를 추가합니다.
+
+        ### Request Body
+        - `name`: 참가자 이름 (필수, 문자열)
+
+        ### Request Example
+        ```json
+        {
+            "name": "홍길동"
+        }
+        ```
+
+        ### Responses
+        - 201: 참가자 추가 성공
+            ```json
+            {
+                "success": true,
+                "message": "참가자가 성공적으로 추가되었습니다.",
+                "data": {
+                    "id": 1,
+                    "name": "홍길동"
+                }
+            }
+            ```
+        - 400: 잘못된 요청 (이름 누락 또는 형식 오류)
+            ```json
+            {
+                "success": false,
+                "error": "이름은 필수입니다."
+            }
+            ```
+        - 500: 서버 오류
+            ```json
+            {
+                "success": false,
+                "error": "참가자 추가 중 오류가 발생했습니다: ...에러메시지..."
+            }
+            ```
+        """
+        try:
+            serializer = ParticipantSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            participant = serializer.save()
+            
+            return Response({
+                'success': True,
+                'message': '참가자가 성공적으로 추가되었습니다.',
+                'data': serializer.data
+            }, status=status.HTTP_201_CREATED)
         
-        return Response({
-            'success': True,
-            'message': '참가자가 성공적으로 추가되었습니다.',
-            'data': serializer.data
-        }, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': f'참가자 추가 중 오류가 발생했습니다: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @method_decorator(csrf_exempt, name='dispatch')
+    @action(detail=False, methods=['get'], url_path='list')
+    def list_participants(self, request):
+        """
+        참가자 목록 조회 API
+
+        ---
+        등록된 모든 참가자 목록을 조회합니다.
+
+        ### Request Body
+        - (body 없음) GET 요청이므로 별도의 body를 받지 않습니다.
+
+        ### Responses
+        - 200: 참가자 목록 조회 성공
+            ```json
+            {
+                "success": true,
+                "message": "참가자 목록을 성공적으로 조회했습니다.",
+                "data": [
+                    {
+                        "id": 1,
+                        "name": "홍길동"
+                    },
+                    {
+                        "id": 2,
+                        "name": "김철수"
+                    },
+                    {
+                        "id": 3,
+                        "name": "이영희"
+                    }
+                ]
+            }
+            ```
+        - 200: 참가자가 없는 경우
+            ```json
+            {
+                "success": true,
+                "message": "참가자 목록을 성공적으로 조회했습니다.",
+                "data": []
+            }
+            ```
+        - 500: 서버 오류
+            ```json
+            {
+                "success": false,
+                "error": "참가자 목록 조회 중 오류가 발생했습니다: ...에러메시지..."
+            }
+            ```
+        """
+        try:
+            participants = Participant.objects.all()
+            serializer = ParticipantSerializer(participants, many=True)
+            
+            return Response({
+                'success': True,
+                'message': '참가자 목록을 성공적으로 조회했습니다.',
+                'data': serializer.data
+            }, status=status.HTTP_200_OK)
+        
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': f'참가자 목록 조회 중 오류가 발생했습니다: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
 class ReceiptInfoViewSet(viewsets.ViewSet):
     """
@@ -122,12 +252,51 @@ class ReceiptInfoViewSet(viewsets.ViewSet):
     queryset = ReceiptInfo.objects.all()
     serializer_class = ReceiptInfoSerializer
 
+    @method_decorator(csrf_exempt, name='dispatch')
     @action(detail=False, methods=['get'], url_path='analyze')
     def analyze_receipts(self, request):
         """
-        GET /api/receiptinfo/analyze/
+        영수증 OCR 분석 및 품목 추출 API
+
+        ---
         업로드된 Receipt 객체의 이미지 각각에 대해 OCR 파이프라인을 실행하고,
-        추출된 품목 정보를 ReceiptInfo로 저장 및 직렬화해 반환
+        추출된 품목 정보를 ReceiptInfo로 저장 및 직렬화해 반환합니다.
+
+        ### Request Body
+        - (body 없음) GET 요청이므로 별도의 body를 받지 않습니다.
+
+        ### Responses
+        - 200: 성공, 추출된 품목 리스트 반환
+            ```json
+            {
+                "success": true,
+                "message": "영수증 분석이 성공적으로 완료되었습니다.",
+                "results": [
+                    {
+                        "receipt": 1,
+                        "store_name": "예시가게",
+                        "item_name": "김밥",
+                        "quantity": 2,
+                        "unit_price": 3000,
+                        "total_amount": 6000
+                    }
+                ]
+            }
+            ```
+        - 400: 분석할 영수증 없음
+            ```json
+            {
+                "success": false,
+                "error": "분석할 영수증이 없습니다."
+            }
+            ```
+        - 500: 서버 오류
+            ```json
+            {
+                "success": false,
+                "error": "분석 중 오류가 발생했습니다: ...에러메시지..."
+            }
+            ```
         """
         try:
             # Receipt 테이블에서 모든 영수증 객체 불러오기
@@ -163,7 +332,9 @@ class ReceiptInfoViewSet(viewsets.ViewSet):
                 store_name = result.get("store_name", "")
                 fixed_store_name = store_processor.find_closest_word(store_name, 0.4) or store_name
                 
-                for item in result["items"]:
+                items = result.get("items") or []  # None이면 빈 리스트로 대체
+
+                for item in items:
                     item_name = item.get("item_name", "")
                     fixed_item_name = item_processor.find_closest_word(item_name, 0.4) or item_name
                     data = {
@@ -179,31 +350,65 @@ class ReceiptInfoViewSet(viewsets.ViewSet):
                     instance = serializer.save()
                     serialized_items.append(ReceiptInfoSerializer(instance).data)
 
-            return Response({'success': True, 'results': serialized_items})
+            return Response({
+                'success': True,
+                'message': '영수증 분석이 성공적으로 완료되었습니다.',
+                'results': serialized_items
+            }, status=status.HTTP_200_OK)
 
         except Exception as e:
-            return Response({'success': False, 'error': str(e)}, status=500)
+            return Response({
+                'success': False,
+                'error': f'분석 중 오류가 발생했습니다: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
-class SettlementViewSet(viewsets.ModelViewSet):
+class SettlementViewSet(viewsets.ViewSet):
     """
     정산 API ViewSet
-    
+
     영수증 기반으로 참가자들의 금액을 정산합니다.
     """
     queryset = Settlement.objects.all()
     serializer_class = SettlementSerializer
 
+    @method_decorator(csrf_exempt, name='dispatch')
     @action(detail=False, methods=['post'], url_path='calculate')
     def calculate_settlement(self, request):
         """
-        POST /api/settlement/calculate/
-        정산 계산 수행
-        
-        Request Body 예시:
-        {
-            "receipt_id": 1,
-            "participants": [1, 2, 3]
-        }
+        정산 계산 API
+
+        ---
+        정산 계산을 수행합니다.
+
+        ### Request Body
+        - `receipt_id`: 영수증 ID (필수)
+        - `participants`: 참가자 ID 리스트 (필수)
+
+        ### Responses
+        - 200: 정산 완료
+            ```json
+            {
+                "success": true,
+                "message": "정산이 완료되었습니다.",
+                "result": {
+                    "참가자1": 5000,
+                    "참가자2": 5000
+                }
+            }
+            ```
+        - 400: 필수값 누락/항목 부족
+            ```json
+            {
+                "error": "receipt_id와 participants는 필수입니다."
+            }
+            ```
+        - 500: 서버 오류
+            ```json
+            {
+                "success": false,
+                "error": "...에러메시지..."
+            }
+            ```
         """
         try:
             receipt_id = request.data.get('receipt_id')
