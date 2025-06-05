@@ -117,7 +117,8 @@ class ParticipantViewSet(viewsets.ViewSet):
     serializer_class = ParticipantSerializer
 
     @method_decorator(csrf_exempt, name='dispatch')
-    def create(self, request):
+    @action(detail=False, methods=['post'], url_path='create')
+    def create_participant(self, request):
         """
         참가자 추가 API
 
@@ -179,7 +180,8 @@ class ParticipantViewSet(viewsets.ViewSet):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @method_decorator(csrf_exempt, name='dispatch')
-    def list(self, request):
+    @action(detail=False, methods=['get'], url_path='list')
+    def list_participants(self, request):
         """
         참가자 목록 조회 API
 
