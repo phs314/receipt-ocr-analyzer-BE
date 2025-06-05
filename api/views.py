@@ -8,6 +8,8 @@ from django.conf import settings
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from .models import Receipt, Participant, ReceiptInfo, Settlement 
+from django.http import HttpResponse
+from openpyxl import Workbook
 from .serializers import ReceiptSerializer, ParticipantSerializer, ReceiptInfoSerializer, SettlementSerializer
 from api.ocr_pipeline.preprocessing import preprocess_image_to_memory
 from api.ocr_pipeline.image_to_text import ocr_image_from_memory
@@ -196,44 +198,116 @@ class SettlementViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], url_path='calculate')
     def calculate_settlement(self, request):
         """
-        POST /api/settlement/calculate/
-        정산 계산 수행
-        
-        Request Body 예시:
+        정산 계산 API
+
+        ---
+        정산 계산을 수행합니다.
+
+        ### Request Body
         {
             "receipt_id": 1,
-            "participants": [1, 2, 3]
+            "items": [
+                { "item_name": "김밥", "participants": ["최희수"] },
+                { "item_name": "라면", "participants": ["하승연", "최희수"] }
+            ]
         }
+
+        ### Responses
+        - 200: 정산 완료
+            ```json
+            {
+                "success": true,
+                "message": "정산이 완료되었습니다.",
+                "result": {
+                    "참가자1": 5000,
+                    "참가자2": 5000
+                }
+            }
+            ```
+        - 400: 필수값 누락/항목 부족
+            ```json
+            {
+                "error": "receipt_id와 participants는 필수입니다."
+            }
+            ```
+        - 500: 서버 오류
+            ```json
+            {
+                "success": false,
+                "error": "...에러메시지..."
+            }
+            ```
+>>>>>>> a378daf ([FEAT] 정산 수정 엑셀 기능 추가)
         """
         try:
-            receipt_id = request.data.get('receipt_id')
-            participant_ids = request.data.get('participants', [])
+            receipt_id = request.data.get("receipt_id")
+            item_assignments = request.data.get("items", [])
 
-            if not receipt_id or not participant_ids:
-                return Response({'error': 'receipt_id와 participants는 필수입니다.'}, status=400)
+            if not receipt_id or not item_assignments:
+                return Response({'error': 'receipt_id와 items 필수'}, status=400)
 
             receipt = Receipt.objects.get(id=receipt_id)
-            items = receipt.items.all()  # related_name='items'를 통해 ReceiptInfo 접근
-            num_participants = len(participant_ids)
+            items = receipt.items.all()  # ReceiptInfo 리스트
 
-            if num_participants == 0 or not items.exists():
-                return Response({'error': '참가자나 항목이 부족합니다.'}, status=400)
+            result = {}  # {참여자이름: 금액}
 
-            # 전체 금액 계산
-            total = sum(item.total_amount for item in items)
-            share = total // num_participants
+            for assignment in item_assignments:
+                item_name = assignment.get("item_name")
+                names = assignment.get("participants", [])
 
-            participant_objs = Participant.objects.filter(id__in=participant_ids)
-            result = {p.name: share for p in participant_objs}
+                matched_items = items.filter(item_name=item_name)
+                if not matched_items.exists():
+                    continue  # 해당 항목 없음
 
+                for item in matched_items:
+                    share = item.total_amount // max(len(names), 1)
+                    for name in names:
+                        result[name] = result.get(name, 0) + share
+
+            # Settlement 저장
             settlement = Settlement.objects.create(receipt=receipt, result=result)
-            settlement.participants.set(participant_objs)
+            participants = Participant.objects.filter(name__in=result.keys())
+            settlement.participants.set(participants)
 
             return Response({
-                'success': True,
-                'message': '정산이 완료되었습니다.',
-                'result': result
+                "success": True,
+                "message": "정산이 완료되었습니다.",
+                "result": result
             })
 
         except Exception as e:
-            return Response({'success': False, 'error': str(e)}, status=500)
+            return Response({'success': False, 'error': str(e)}, status=500)  
+        
+def export_settlement_excel(request, settlement_id):
+    from datetime import datetime
+
+    settlement = Settlement.objects.get(id=settlement_id)
+    receipt = settlement.receipt
+    receipt_infos = receipt.items.all()  # related_name='items'로 ReceiptInfo 접근
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "정산 결과"
+
+    # 1. 상호명 및 업로드일
+    ws.append(["상호명", receipt_infos.first().store_name if receipt_infos.exists() else "정보 없음"])
+    ws.append(["업로드일", receipt.upload_time.strftime('%Y-%m-%d %H:%M:%S')])
+    ws.append([])
+
+    # 2. 메뉴 목록
+    ws.append(["메뉴명", "수량", "단가", "총액"])
+    for info in receipt_infos:
+        ws.append([info.item_name, info.quantity, info.unit_price, info.total_amount])
+    ws.append([])
+
+    # 3. 정산 결과
+    ws.append(["참여자", "정산 금액"])
+    for name, amount in settlement.result.items():
+        ws.append([name, amount])
+
+    # 응답 반환
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    filename = f"settlement_{settlement_id}.xlsx"
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    wb.save(response)
+    return response
