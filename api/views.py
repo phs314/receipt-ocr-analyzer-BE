@@ -14,7 +14,7 @@ from .serializers import ReceiptSerializer, ParticipantSerializer, ReceiptInfoSe
 from api.ocr_pipeline.preprocessing import preprocess_image_to_memory
 from api.ocr_pipeline.image_to_text import ocr_image_from_memory
 from api.ocr_pipeline.process_text import TextPostProcessor
-from api.ocr_pipeline.extract_item import extract_menu_items_from_lines
+from api.ocr_pipeline.extract_item2 import extract_menu_items_from_lines
 import os
 import uuid
 
@@ -307,8 +307,6 @@ class ReceiptInfoViewSet(viewsets.ViewSet):
                 return Response({'success': False, 'error': '분석할 영수증이 없습니다.'}, status=400)
 
             processor = TextPostProcessor(dict_path=os.path.join(settings.BASE_DIR, 'api', 'ocr_pipeline', 'dictionary.txt'))
-            store_processor = TextPostProcessor(dict_path=os.path.join(settings.BASE_DIR, 'api', 'ocr_pipeline', 'dictionary_store.txt'))
-            item_processor = TextPostProcessor(dict_path=os.path.join(settings.BASE_DIR, 'api', 'ocr_pipeline', 'dictionary_item.txt'))
             serialized_items = []
 
             for receipt in receipts:
@@ -332,17 +330,13 @@ class ReceiptInfoViewSet(viewsets.ViewSet):
 
                 # 5. 가게명/음식명 각각 find_closest_word 적용
                 store_name = result.get("store_name", "")
-                fixed_store_name = store_processor.find_closest_word(store_name, 0.4) or store_name
-                
                 items = result.get("items") or []  # None이면 빈 리스트로 대체
 
                 for item in items:
-                    item_name = item.get("item_name", "")
-                    fixed_item_name = item_processor.find_closest_word(item_name, 0.4) or item_name
                     data = {
                         "receipt": receipt.id,
-                        "store_name": fixed_store_name,
-                        "item_name": fixed_item_name,
+                        "store_name": store_name,
+                        "item_name": item["item_name"],
                         "quantity": item["quantity"],
                         "unit_price": item["unit_price"],
                         "total_amount": item["total_amount"],
