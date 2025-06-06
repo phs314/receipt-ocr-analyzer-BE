@@ -52,6 +52,7 @@ class Participant(models.Model):
         db_table = 'participant'  # MySQL 테이블 이름 지정
         
     def __str__(self):
+
         return f"Participant {self.id}: {self.name}"
 
 class Settlement(models.Model):
