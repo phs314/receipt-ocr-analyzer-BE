@@ -382,9 +382,11 @@ class SettlementViewSet(viewsets.ViewSet):
         ---
         정산 계산을 수행합니다.
 
-        ### Request Body
+        request body 예시:
         {
             "receipt_id": 1,
+            "method": "equal" or "item",
+            "participants": ["하승연", "최희수"],
             "items": [
                 { "item_name": "김밥", "participants": ["최희수"] },
                 { "item_name": "라면", "participants": ["하승연", "최희수"] }
@@ -419,28 +421,45 @@ class SettlementViewSet(viewsets.ViewSet):
         """
         try:
             receipt_id = request.data.get("receipt_id")
+            method = request.data.get("method", "equal")
+            participant_names = request.data.get("participants", [])
             item_assignments = request.data.get("items", [])
 
-            if not receipt_id or not item_assignments:
-                return Response({'error': 'receipt_id와 items 필수'}, status=400)
+            if not receipt_id:
+                return Response({'error': 'receipt_id는 필수입니다.'}, status=400)
 
             receipt = Receipt.objects.get(id=receipt_id)
             items = receipt.items.all()  # ReceiptInfo 리스트
 
-            result = {}  # {참여자이름: 금액}
+            result = {}
 
-            for assignment in item_assignments:
-                item_name = assignment.get("item_name")
-                names = assignment.get("participants", [])
+            if method == "equal":
+                if not participant_names:
+                    return Response({'error': '1/N 정산은 participants 필수입니다.'}, status=400)
 
-                matched_items = items.filter(item_name=item_name)
-                if not matched_items.exists():
-                    continue  # 해당 항목 없음
+                total = sum(item.total_amount for item in items)
+                share = total // len(participant_names)
+                for name in participant_names:
+                    result[name] = share
 
-                for item in matched_items:
-                    share = item.total_amount // max(len(names), 1)
-                    for name in names:
-                        result[name] = result.get(name, 0) + share
+            elif method == "item":
+                if not item_assignments:
+                    return Response({'error': '항목별 정산은 items 필수입니다.'}, status=400)
+
+                for assignment in item_assignments:
+                    item_name = assignment.get("item_name")
+                    names = assignment.get("participants", [])
+                    matched_items = items.filter(item_name=item_name)
+
+                    if not matched_items.exists():
+                        continue
+
+                    for item in matched_items:
+                        share = item.total_amount // max(len(names), 1)
+                        for name in names:
+                            result[name] = result.get(name, 0) + share
+            else:
+                return Response({'error': 'method는 "equal" 또는 "item"이어야 합니다.'}, status=400)
 
             # Settlement 저장
             settlement = Settlement.objects.create(receipt=receipt, result=result)
@@ -454,7 +473,7 @@ class SettlementViewSet(viewsets.ViewSet):
             })
 
         except Exception as e:
-            return Response({'success': False, 'error': str(e)}, status=500)  
+            return Response({'success': False, 'error': str(e)}, status=500) 
         
 def export_settlement_excel(request, settlement_id):
     from datetime import datetime
