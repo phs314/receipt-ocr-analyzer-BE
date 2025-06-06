@@ -1,10 +1,17 @@
 import re
+import json
 import Levenshtein
 
 class TextPostProcessor:
     def __init__(self, dict_path="dictionary.txt"):
         self.dict_path = dict_path
-        self.dictionary = self.load_dictionary(dict_path)
+        self.store_item_path = dict_path.endswith('.json')
+        
+        # 파일 타입에 따라 다른 로딩 방식 사용
+        if self.store_item_path:
+            self._load_json_dictionary()
+        else:
+            self._load_text_dictionary()
         self.chosung_list = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 
                              'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ']
         self.jungsung_list = ['ㅏ', 'ㅐ', 'ㅑ', 'ㅒ', 'ㅓ', 'ㅔ', 'ㅕ', 'ㅖ', 'ㅗ', 'ㅘ', 
@@ -13,15 +20,67 @@ class TextPostProcessor:
                               'ㄻ', 'ㄼ', 'ㄽ', 'ㄾ', 'ㄿ', 'ㅀ', 'ㅁ', 'ㅂ', 'ㅄ', 'ㅅ', 
                               'ㅆ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ']
 
-    def load_dictionary(self, dict_path):
-        dictionary = []
+    def _load_text_dictionary(self):
+        """텍스트 파일 로딩 - dictionary만 생성"""
+        self.stores_dict = {}
         try:
-            with open(dict_path, 'r', encoding='utf-8') as f:
-                dictionary = [line.strip() for line in f if line.strip()]
+            with open(self.dict_path, 'r', encoding='utf-8') as f:
+                self.dictionary = [line.strip() for line in f if line.strip()]
         except Exception:
-            pass
-        return dictionary
+            self.dictionary = []
 
+    def _load_json_dictionary(self):
+        """JSON 파일 로딩 - stores_dict만 생성"""
+        self.dictionary = []
+        try:
+            with open(self.dict_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                self.stores_dict = data.get("stores", {})
+        except Exception:
+            self.stores_dict = {}
+
+    def find_best_store_match(self, target, threshold=0.4):
+        """가게명에서 가장 유사한 매치 찾기 (JSON 전용)"""
+        if not self.store_item_path or not self.stores_dict:
+            return None, 0
+            
+        best_match = None
+        max_similarity = 0
+        
+        for store_name in self.stores_dict.keys():
+            if abs(len(target) - len(store_name)) > len(target) / 2:
+                continue
+
+            similarity = self.calculate_jamo_similarity(target, store_name)
+            if similarity > max_similarity:
+                max_similarity = similarity
+                best_match = store_name
+            elif similarity == max_similarity and len(store_name) > len(best_match or ""):
+                best_match = store_name
+        
+        return (best_match, max_similarity) if max_similarity >= threshold else (None, 0)
+
+    def find_best_item_match(self, target, store_name, threshold=0.4):
+        """특정 가게의 메뉴에서 가장 유사한 매치 찾기 (JSON 전용)"""
+        if not self.store_item_path or not self.stores_dict or store_name not in self.stores_dict:
+            return None, 0
+            
+        items_list = self.stores_dict[store_name].get("items", [])
+        best_match = None
+        max_similarity = 0
+        
+        for item in items_list:
+            if abs(len(target) - len(item)) > len(target) / 2:
+                continue
+            similarity = self.calculate_jamo_similarity(target, item)
+            if similarity > max_similarity:
+                max_similarity = similarity
+                best_match = item
+            elif similarity == max_similarity and len(item) > len(best_match or ""):
+                best_match = item
+        
+        return (best_match, max_similarity) if max_similarity >= threshold else (None, 0)
+        
     def decompose_hangul(self, text):
         result = []
         for char in text:
@@ -73,6 +132,10 @@ class TextPostProcessor:
         text = re.sub(r'\bO(\d+)', r'0\g<1>', text)
         text = re.sub(r'(\d*[,\.])O(\d*)', r'\g<1>0\g<2>', text)
         text = re.sub(r'(\d*)U(\d*)', r'\g<1>0\g<2>', text)
+        text = re.sub(r'(\d*)E(\d*)', r'\g<1>0\g<2>', text)
+        text = re.sub(r'(\d+)E\b', r'\g<1>0', text) 
+        text = re.sub(r'\bE(\d+)', r'0\g<1>', text) 
+        text = re.sub(r'(\d*[,\.])E(\d*)', r'\g<1>0\g<2>', text)
         text = re.sub(r'(\d*)\((\d*)', r'\1\2', text)
         text = re.sub(r'(\d*)\)(\d*)', r'\1\2', text)
         text = re.sub(r'(\d+)\s*,\s*(\d+)', r'\1,\2', text)
