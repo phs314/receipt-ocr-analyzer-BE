@@ -65,4 +65,4 @@ class Settlement(models.Model):
         db_table = 'settlement'  # MySQL 테이블 이름 지정
 
     def __str__(self):
-        return f"Settlement for Receipt {self.receipt.id} - {self.method}"
+        return f"Settlement for Receipt {self.receipt.id} - {self.created_at}"
