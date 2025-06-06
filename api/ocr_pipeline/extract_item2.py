@@ -82,7 +82,7 @@ def extract_menu_items_from_lines(lines):
             words = line.split()
             if len(words) == 0:
                 continue
-            print(f"📄 [{i}] 현재 줄: '{line}'")
+
             # 연속성 체크: 첫 번째 메뉴가 아니고 이전 성공 줄과 너무 멀면 중단
             if last_successful_line != -1 and i > last_successful_line + 2:
                 break
