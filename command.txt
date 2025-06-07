@@ -7,7 +7,7 @@
 1) 가상환경 생성 (최초 1회만)
    --------------------------------
    > 터미널(=PowerShell)에서 서버 프로젝트 폴더로 이동
-     cd C:\path\to\receipt-ocr-analyzer-BE
+     cd receipt-ocr-analyzer-BE
 
    > 파이썬 가상환경 생성
      python -m venv venv
