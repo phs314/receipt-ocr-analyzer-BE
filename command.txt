@@ -1,0 +1,87 @@
+===============================
+📝 Receipt OCR Analyzer BE
+   PowerShell 실행 가이드 & 명령어 모음
+   (메모장처럼 참고용)
+===============================
+
+1) 가상환경 생성 (최초 1회만)
+   --------------------------------
+   > 터미널(=PowerShell)에서 서버 프로젝트 폴더로 이동
+     cd receipt-ocr-analyzer-BE
+
+   > 파이썬 가상환경 생성
+     python -m venv venv
+
+   * 이 단계는 한 번만 실행합니다.  
+     이미 venv 폴더가 있다면 건너뛰세요 😊
+
+
+2) 가상환경 활성화
+   --------------------------------
+   > PowerShell에서 venv 활성화
+     .\venv\Scripts\Activate.ps1
+
+   * 활성화가 되면 프롬프트 왼쪽에 `(venv)` 표시가 붙습니다.  
+   * 만약 실행 정책 때문에 막힌다면, 아래 명령을 먼저 실행하세요:
+     Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force  
+     (이렇게 하면 이 세션에서만 스크립트 실행이 허용됩니다)
+
+
+3) 의존성 설치
+   --------------------------------
+   > pip을 최신으로 업그레이드
+     python -m pip install --upgrade pip
+
+   > requirements.txt에 적힌 패키지 설치
+     pip install -r requirements.txt
+
+   * requirements.txt에 기록된 라이브러리가 한 번에 설치됩니다.  
+   * 이미 설치된 상태라면, 설치 과정을 건너뛰셔도 됩니다.
+
+
+4) 데이터베이스 마이그레이션
+   --------------------------------
+   > Django 마이그레이션 실행
+     python manage.py migrate
+
+   * 이 명령어는 데이터베이스 테이블을 생성하거나 업데이트합니다.  
+   * 마이그레이션이 정상 완료되면 “Operations to perform...” 메시지가 뜹니다.
+
+
+5) 개발 서버 실행
+   --------------------------------
+   > Django 개발 서버 시작
+     python manage.py runserver
+
+   * 실행 후, 브라우저에서 Swagger UI 열기:
+     http://127.0.0.1:8000/swagger/
+
+   * 서버를 멈추려면 PowerShell에서 `Ctrl + C`를 누르세요.
+
+
+6) 서버 중지
+   --------------------------------
+   - 터미널에서 `Ctrl + C` 누르기  
+     (서버가 안전하게 종료됩니다)
+
+===============================
+★ 추가 팁 & 참고 사항 ★
+===============================
+
+- CORS 오류가 발생한다면:
+  백엔드 `settings.py` 파일에 `django-cors-headers` 설정을 확인해주세요.
+
+- 가상환경을 새로 만들고 싶다면:
+  1) 기존 venv 폴더 삭제: 
+     Remove-Item -Recurse -Force .\venv  
+  2) 1)번 과정을 다시 진행
+
+- 패키지 업데이트할 때:
+  pip install --upgrade -r requirements.txt
+
+- Swagger 문서 확인:
+  http://127.0.0.1:8000/swagger/ 에서 
+  모든 엔드포인트와 요청/응답 스펙을 한눈에 볼 수 있습니다.
+
+===============================
+🎉 필요할 때 이 파일을 열어 명령어를 복사·붙여넣기 하시면 됩니다!  

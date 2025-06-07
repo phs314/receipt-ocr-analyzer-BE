@@ -17,6 +17,7 @@ from api.ocr_pipeline.process_text import TextPostProcessor
 from api.ocr_pipeline.extract_item2 import extract_menu_items_from_lines
 import os
 import uuid
+import shutil
 
 class ReceiptViewSet(viewsets.ViewSet):
     """
@@ -67,46 +68,118 @@ class ReceiptViewSet(viewsets.ViewSet):
             if 'image' not in request.FILES:
                 return Response({'error': '이미지 파일이 필요합니다.'}, status=status.HTTP_400_BAD_REQUEST)
         
-            image = request.FILES['image']
+            # 단일 파일 대신 getlist를 사용하여 여러 파일 가져오기
+            images = request.FILES.getlist('image')
             
-            # media 디렉터리 확인 및 생성
-            images_dir = os.path.join(settings.MEDIA_ROOT, 'receipts')
-            os.makedirs(images_dir, exist_ok=True)
-            
-            # 파일명 생성 (고유한 파일명 보장)
-            original_filename = image.name
-            file_extension = os.path.splitext(original_filename)[1].lower()
-            unique_filename = f"{uuid.uuid4()}{file_extension}"
-            
-            # 파일 저장 경로
-            file_path = os.path.join('receipts', unique_filename)
-            full_path = os.path.join(settings.MEDIA_ROOT, file_path)
-            
-            # 파일 저장
-            with open(full_path, 'wb+') as destination:
-                for chunk in image.chunks():
-                    destination.write(chunk)
-            
-            # serializer를 사용해 저장
-            data = {
-                'file_name': original_filename,
-                'image_path': file_path,
-                # 필요한 추가 필드가 있다면 여기에 포함
-            }
-            serializer = ReceiptSerializer(data=data)
-            serializer.is_valid(raise_exception=True)
-            receipt = serializer.save()
+            if not images:
+                return Response({'error': '이미지 파일이 필요합니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            uploaded_receipts_data = [] # 업로드된 영수증 정보들을 담을 리스트
+
+            for image in images: # 각 이미지 파일을 반복 처리
+                # media 디렉터리 확인 및 생성
+                images_dir = os.path.join(settings.MEDIA_ROOT, 'receipts')
+                os.makedirs(images_dir, exist_ok=True)
+                
+                # 파일명 생성 (고유한 파일명 보장)
+                original_filename = image.name
+                file_extension = os.path.splitext(original_filename)[1].lower()
+                unique_filename = f"{uuid.uuid4()}{file_extension}"
+                
+                # 파일 저장 경로
+                file_path = os.path.join('receipts', unique_filename)
+                full_path = os.path.join(settings.MEDIA_ROOT, file_path)
+                
+                # 파일 저장
+                with open(full_path, 'wb+') as destination:
+                    for chunk in image.chunks():
+                        destination.write(chunk)
+                
+                # serializer를 사용해 저장
+                data = {
+                    'file_name': original_filename,
+                    'image_path': file_path,
+                }
+                serializer = ReceiptSerializer(data=data)
+                serializer.is_valid(raise_exception=True)
+                receipt = serializer.save()
+                uploaded_receipts_data.append(serializer.data)
             
             return Response({
                 'success': True,
-                'message': '영수증이 성공적으로 업로드되었습니다.',
-                'data': serializer.data
+                'message': f'{len(uploaded_receipts_data)}개의 영수증이 성공적으로 업로드되었습니다.',
+                'data': uploaded_receipts_data # 여러 영수증 정보를 리스트로 반환
             }, status=status.HTTP_201_CREATED)
         
         except Exception as e:
             return Response({
                 'success': False,
                 'error': f'업로드 중 오류가 발생했습니다: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @method_decorator(csrf_exempt, name='dispatch')
+    @action(detail=False, methods=['POST'],  url_path='clear_all_data')
+    def clear_all_data(self, request):
+        """
+        모든 백엔드 데이터 초기화 API
+
+        ---
+        영수증 이미지 파일, 영수증 데이터, 참여자 데이터, 영수증 상세 정보, 정산 데이터를
+        모두 초기화합니다. 이 API는 프론트엔드 새로고침 시 자동으로 호출되도록 구현하여
+        개발/테스트 환경에서 데이터 누적을 방지하는 데 사용될 수 있습니다.
+
+        ### Responses
+        - 200: 성공적으로 초기화됨
+            ```json
+            {
+                "success": true,
+                "message": "모든 데이터와 업로드된 영수증 이미지가 성공적으로 초기화되었습니다."
+            }
+            ```
+        - 500: 서버 오류
+            ```json
+            {
+                "success": false,
+                "error": "데이터 초기화 중 오류가 발생했습니다: ...에러메시지..."
+            }
+            ```
+        """
+        try:
+            # 1. 모든 ReceiptInfo 데이터 삭제
+            ReceiptInfo.objects.all().delete()
+            print("✅ 모든 ReceiptInfo 데이터 삭제 완료.")
+
+            # 2. 모든 Settlement 데이터 삭제
+            Settlement.objects.all().delete()
+            print("✅ 모든 Settlement 데이터 삭제 완료.")
+
+            # 3. 모든 Receipt 데이터 삭제
+            Receipt.objects.all().delete()
+            print("✅ 모든 Receipt 데이터 삭제 완료.")
+            
+            # 4. 모든 Participant 데이터 삭제
+            Participant.objects.all().delete()
+            print("✅ 모든 Participant 데이터 삭제 완료.")
+
+            # 5. 업로드된 영수증 이미지 파일 삭제
+            images_dir = os.path.join(settings.MEDIA_ROOT, 'receipts')
+            if os.path.exists(images_dir):
+                shutil.rmtree(images_dir)
+                os.makedirs(images_dir) # 삭제 후 다시 생성
+                print(f"✅ 영수증 이미지 디렉토리 초기화 완료: {images_dir}")
+            else:
+                print(f"⚠️ 영수증 이미지 디렉토리가 존재하지 않습니다: {images_dir}")
+
+            return Response({
+                'success': True,
+                'message': '모든 데이터와 업로드된 영수증 이미지가 성공적으로 초기화되었습니다.'
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            print(f"❌ 데이터 초기화 중 오류 발생: {str(e)}")
+            return Response({
+                'success': False,
+                'error': f'데이터 초기화 중 오류가 발생했습니다: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
 class ParticipantViewSet(viewsets.ViewSet):
@@ -301,6 +374,9 @@ class ReceiptInfoViewSet(viewsets.ViewSet):
             ```
         """
         try:
+            #누적된 이전 분석 결과 모두 삭제
+            ReceiptInfo.objects.all().delete()
+
             # Receipt 테이블에서 모든 영수증 객체 불러오기
             receipts = Receipt.objects.all()
             if not receipts.exists():
