@@ -60,14 +60,14 @@ class Settlement(models.Model):
         ('item', 'Item Split (항목별)'),
     ]
     
-    receipt = models.ForeignKey('Receipt', on_delete=models.CASCADE)
+    receipts = models.ManyToManyField('Receipt')  # 기존 ForeignKey → ManyToMany로 수정
     participants = models.ManyToManyField('Participant')
     result = models.JSONField()  # {'홍길동': 3000, '김철수': 3000}
     method = models.CharField(max_length=10, choices=METHOD_CHOICES, default='equal') 
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
-        db_table = 'settlement'  # MySQL 테이블 이름 지정
+        db_table = 'settlement'
 
     def __str__(self):
-        return f"Settlement for Receipt {self.receipt.id} - {self.method}"
+        return f"Settlement with {self.receipts.count()} receipts - {self.method}"

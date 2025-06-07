@@ -20,7 +20,6 @@ class ReceiptInfoSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class SettlementSerializer(serializers.ModelSerializer):
-
     class Meta:
         model = Settlement
-        fields = ['id', 'receipt', 'participants', 'result', 'created_at']
+        fields = ['id', 'receipt', 'participants', 'result', 'method', 'created_at']
