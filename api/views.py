@@ -376,15 +376,25 @@ class SettlementViewSet(viewsets.ViewSet):
         ---
         정산 계산을 수행합니다.
 
-        request body 예시:
+        Request Body 예시:
         {
-            "receipt_id": 1,
             "method": "equal" or "item",
-            "participants": ["하승연", "최희수"],
-            "items": [
-                { "item_name": "김밥", "participants": ["최희수"] },
-                { "item_name": "라면", "participants": ["하승연", "최희수"] }
-            ]
+            "receipts": [
+                {
+                    "receipt_id": 1,
+                    "items": [
+                        {"item_name": "김밥", "participants": ["최희수"]},
+                        {"item_name": "라면", "participants": ["하승연", "최희수"]}
+                    ]
+                },
+                {
+                    "receipt_id": 2,
+                    "items": [
+                        {"item_name": "돈까스", "participants": ["하승연"]}
+                    ]
+                }
+            ],
+            "participants": ["최희수", "하승연"]  // equal 방식일 경우만 필요
         }
 
         ### Responses
@@ -414,90 +424,136 @@ class SettlementViewSet(viewsets.ViewSet):
             ```
         """
         try:
-            receipt_id = request.data.get("receipt_id")
             method = request.data.get("method", "equal")
+            receipts = request.data.get("receipts", [])
             participant_names = request.data.get("participants", [])
-            item_assignments = request.data.get("items", [])
 
-            if not receipt_id:
-                return Response({'error': 'receipt_id는 필수입니다.'}, status=400)
+            if not receipts or not method:
+                return Response({'error': 'method와 receipts는 필수입니다.'}, status=400)
 
-            receipt = Receipt.objects.get(id=receipt_id)
-            items = receipt.items.all()  # ReceiptInfo 리스트
+            overall_result = {}
+            used_receipts = []
 
-            result = {}
+            for receipt_info in receipts:
+                receipt_id = receipt_info.get("receipt_id")
+                if not receipt_id:
+                    continue
 
-            if method == "equal":
-                if not participant_names:
-                    return Response({'error': '1/N 정산은 participants 필수입니다.'}, status=400)
+                try:
+                    receipt = Receipt.objects.get(id=receipt_id)
+                except Receipt.DoesNotExist:
+                    continue
 
-                total = sum(item.total_amount for item in items)
-                share = total // len(participant_names)
-                for name in participant_names:
-                    result[name] = share
+                items = receipt.items.all()
+                result = {}  # {참여자이름: 금액}
 
-            elif method == "item":
-                if not item_assignments:
-                    return Response({'error': '항목별 정산은 items 필수입니다.'}, status=400)
+                if method == "equal":
+                    if not participant_names:
+                        return Response({'error': '1/N 정산은 participants 필수입니다.'}, status=400)
 
-                for assignment in item_assignments:
-                    item_name = assignment.get("item_name")
-                    names = assignment.get("participants", [])
-                    matched_items = items.filter(item_name=item_name)
+                    total = sum(item.total_amount for item in items)
+                    share = total // len(participant_names)
+                    for name in participant_names:
+                        result[name] = share
 
-                    if not matched_items.exists():
-                        continue
+                elif method == "item":
+                    item_assignments = receipt_info.get("items", [])
+                    if not item_assignments:
+                        return Response({'error': f'항목별 정산은 items 필수 (receipt_id: {receipt_id})'}, status=400)
 
-                    for item in matched_items:
-                        share = item.total_amount // max(len(names), 1)
-                        for name in names:
-                            result[name] = result.get(name, 0) + share
-            else:
-                return Response({'error': 'method는 "equal" 또는 "item"이어야 합니다.'}, status=400)
+                    for assignment in item_assignments:
+                        item_name = assignment.get("item_name")
+                        names = assignment.get("participants", [])
+                        matched_items = items.filter(item_name=item_name)
+
+                        if not matched_items.exists():
+                            continue
+
+                        for item in matched_items:
+                            share = item.total_amount // max(len(names), 1)
+                            for name in names:
+                                result[name] = result.get(name, 0) + share
+                
+                else:
+                    return Response({'error': 'method는 "equal" 또는 "item"이어야 합니다.'}, status=400)
+
+                for name, amount in result.items():
+                    overall_result[name] = overall_result.get(name, 0) + amount
+
+                used_receipts.append(receipt_id)
 
             # Settlement 저장
-            settlement = Settlement.objects.create(receipt=receipt, result=result)
-            participants = Participant.objects.filter(name__in=result.keys())
-            settlement.participants.set(participants)
+            # Settlement는 영수증 1개 기준으로 만들지 않고, 전체 처리 후 한 번에 생성
+            # 전체 루프 종료 후 아래처럼 처리
+            settlement = Settlement.objects.create(result=overall_result, method=method)
+            settlement.receipts.set(Receipt.objects.filter(id__in=used_receipts))
+            settlement.participants.set(Participant.objects.filter(name__in=overall_result.keys()))
+            
+            # 디버그 로그
+            print(f"✅ 정산 방식: {method}")
+            print(f"✅ 정산 결과: {overall_result}")
+            print(f"✅ 포함된 영수증 ID 목록: {used_receipts}")
 
             return Response({
                 "success": True,
-                "message": "정산이 완료되었습니다.",
-                "result": result
+                "message": f"{len(used_receipts)}개 영수증 정산 완료",
+                "result": overall_result
             })
 
-        except Exception as e:
-            return Response({'success': False, 'error': str(e)}, status=500) 
         
-def export_settlement_excel(request, settlement_id):
-    from datetime import datetime
+        except Exception as e:
+            return Response({'success': False, 'error': str(e)}, status=500)
 
+def export_settlement_excel(request, settlement_id):
     settlement = Settlement.objects.get(id=settlement_id)
-    receipt = settlement.receipt
-    receipt_infos = receipt.items.all()  # related_name='items'로 ReceiptInfo 접근
+    receipts = settlement.receipts.all()
+
+     # ✅ 로그 출력 (엑셀에 들어갈 데이터 확인용)
+    print("✅ 정산 방식:", settlement.method)
+    print("✅ 정산 결과:", settlement.result)
+    print("✅ 포함된 영수증 ID 목록:", [r.id for r in receipts])
+    for receipt in receipts:
+        print(f"📄 영수증 ID {receipt.id} - 업로드일: {receipt.upload_time}")
+        for info in receipt.items.all():
+            print(f"  - 품목: {info.item_name}, 수량: {info.quantity}, 금액: {info.total_amount}")
+
 
     wb = Workbook()
     ws = wb.active
     ws.title = "정산 결과"
 
-    # 1. 상호명 및 업로드일
-    ws.append(["상호명", receipt_infos.first().store_name if receipt_infos.exists() else "정보 없음"])
-    ws.append(["업로드일", receipt.upload_time.strftime('%Y-%m-%d %H:%M:%S')])
-    ws.append([])
+    for idx, receipt in enumerate(receipts, start=1):
+        receipt_infos = receipt.items.all()
+        first_info = receipt_infos.first()
 
-    # 2. 메뉴 목록
-    ws.append(["메뉴명", "수량", "단가", "총액"])
-    for info in receipt_infos:
-        ws.append([info.item_name, info.quantity, info.unit_price, info.total_amount])
-    ws.append([])
+        # ✅ 수식 오류 방지를 위해 '=' 제거
+        ws.append([f"영수증 {idx}"])
+        ws.append(["상호명", first_info.store_name if first_info else "정보 없음"])
+        ws.append(["업로드일", receipt.upload_time.strftime('%Y-%m-%d %H:%M:%S')])
+        ws.append(["정산 방식", settlement.method])
+        ws.append([])
 
-    # 3. 정산 결과
+        if settlement.method == "equal":
+            total = sum(info.total_amount for info in receipt_infos)
+            ws.append(["총 결제금액", total])
+            ws.append(["정산 방식", "N분의 1"])
+            ws.append([])
+        else:
+            ws.append(["메뉴명", "수량", "단가", "총액"])
+            for info in receipt_infos:
+                ws.append([info.item_name, info.quantity, info.unit_price, info.total_amount])
+            ws.append([])
+
+    # ✅ 정산 결과
+    ws.append(["정산 결과"])
     ws.append(["참여자", "정산 금액"])
     for name, amount in settlement.result.items():
         ws.append([name, amount])
 
-    # 응답 반환
-    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    # ✅ 반환
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
     filename = f"settlement_{settlement_id}.xlsx"
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     wb.save(response)
