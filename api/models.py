@@ -63,6 +63,7 @@ class Settlement(models.Model):
     receipts = models.ManyToManyField('Receipt')  # 기존 ForeignKey → ManyToMany로 수정
     participants = models.ManyToManyField('Participant')
     result = models.JSONField()  # {'홍길동': 3000, '김철수': 3000}
+    item_assignments_data = models.JSONField(blank=True, null=True) # 품목별 참가자 할당 정보
     method = models.CharField(max_length=10, choices=METHOD_CHOICES, default='equal') 
     created_at = models.DateTimeField(default=timezone.now)
 
