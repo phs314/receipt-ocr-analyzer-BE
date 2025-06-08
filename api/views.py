@@ -18,6 +18,7 @@ from api.ocr_pipeline.extract_item2 import extract_menu_items_from_lines
 import os
 import uuid
 import shutil
+import json
 
 class ReceiptViewSet(viewsets.ViewSet):
     """
@@ -412,7 +413,7 @@ class ReceiptInfoViewSet(viewsets.ViewSet):
                     data = {
                         "receipt": receipt.id,
                         "store_name": store_name,
-                        "item_name": item["item_name"],
+                        "item_name": item["item_name"].strip(), # 품목 이름 양쪽 공백 제거
                         "quantity": item["quantity"],
                         "unit_price": item["unit_price"],
                         "total_amount": item["total_amount"],
@@ -509,6 +510,7 @@ class SettlementViewSet(viewsets.ViewSet):
 
             overall_result = {}
             used_receipts = []
+            all_item_assignments = []
 
             for receipt_info in receipts:
                 receipt_id = receipt_info.get("receipt_id")
@@ -521,7 +523,7 @@ class SettlementViewSet(viewsets.ViewSet):
                     continue
 
                 items = receipt.items.all()
-                result = {}  # {참여자이름: 금액}
+                result = {}
 
                 if method == "equal":
                     if not participant_names:
@@ -535,13 +537,16 @@ class SettlementViewSet(viewsets.ViewSet):
                 elif method == "item":
                     item_assignments = receipt_info.get("items", [])
                     if not item_assignments:
-                        return Response({'error': f'항목별 정산은 items 필수 (receipt_id: {receipt_id})'}, status=400)
+                        return Response(
+                            {'error': f'항목별 정산은 items 필수 (receipt_id: {receipt_id})'},
+                            status=400
+                        )
 
+                    # 개별 품목 할당
                     for assignment in item_assignments:
-                        item_name = assignment.get("item_name")
+                        item_name = assignment.get("item_name").strip()
                         names = assignment.get("participants", [])
                         matched_items = items.filter(item_name=item_name)
-
                         if not matched_items.exists():
                             continue
 
@@ -549,34 +554,38 @@ class SettlementViewSet(viewsets.ViewSet):
                             share = item.total_amount // max(len(names), 1)
                             for name in names:
                                 result[name] = result.get(name, 0) + share
-                
+
+                    # 할당 데이터 수집
+                    all_item_assignments.append({
+                        "receipt_id": receipt_id,
+                        "items": item_assignments
+                    })
+
                 else:
                     return Response({'error': 'method는 "equal" 또는 "item"이어야 합니다.'}, status=400)
 
+                # 전체 합산
                 for name, amount in result.items():
                     overall_result[name] = overall_result.get(name, 0) + amount
 
                 used_receipts.append(receipt_id)
 
-            # Settlement 저장
-            # Settlement는 영수증 1개 기준으로 만들지 않고, 전체 처리 후 한 번에 생성
-            # 전체 루프 종료 후 아래처럼 처리
-            settlement = Settlement.objects.create(result=overall_result, method=method)
+            # Settlement 객체는 루프 후 한 번만 생성
+            settlement = Settlement.objects.create(
+                result=overall_result,
+                method=method,
+                item_assignments_data=json.dumps(all_item_assignments, ensure_ascii=False)
+            )
             settlement.receipts.set(Receipt.objects.filter(id__in=used_receipts))
             settlement.participants.set(Participant.objects.filter(name__in=overall_result.keys()))
-            
-            # 디버그 로그
-            print(f"✅ 정산 방식: {method}")
-            print(f"✅ 정산 결과: {overall_result}")
-            print(f"✅ 포함된 영수증 ID 목록: {used_receipts}")
 
             return Response({
                 "success": True,
                 "message": f"{len(used_receipts)}개 영수증 정산 완료",
-                "result": overall_result
+                "result": overall_result,
+                "settlement_id": settlement.id
             })
 
-        
         except Exception as e:
             return Response({'success': False, 'error': str(e)}, status=500)
 
@@ -594,6 +603,14 @@ def export_settlement_excel(request, settlement_id):
             print(f"  - 품목: {info.item_name}, 수량: {info.quantity}, 금액: {info.total_amount}")
 
 
+    # JSON 문자열을 파이썬 객체로 변환
+    item_assignments_list = []
+    if settlement.item_assignments_data:
+        try:
+            item_assignments_list = json.loads(settlement.item_assignments_data)
+        except json.JSONDecodeError:
+            item_assignments_list = []
+
     wb = Workbook()
     ws = wb.active
     ws.title = "정산 결과"
@@ -602,31 +619,47 @@ def export_settlement_excel(request, settlement_id):
         receipt_infos = receipt.items.all()
         first_info = receipt_infos.first()
 
-        # ✅ 수식 오류 방지를 위해 '=' 제거
         ws.append([f"영수증 {idx}"])
         ws.append(["상호명", first_info.store_name if first_info else "정보 없음"])
         ws.append(["업로드일", receipt.upload_time.strftime('%Y-%m-%d %H:%M:%S')])
-        ws.append(["정산 방식", settlement.method])
         ws.append([])
 
-        if settlement.method == "equal":
-            total = sum(info.total_amount for info in receipt_infos)
-            ws.append(["총 결제금액", total])
-            ws.append(["정산 방식", "N분의 1"])
-            ws.append([])
-        else:
-            ws.append(["메뉴명", "수량", "단가", "총액"])
-            for info in receipt_infos:
-                ws.append([info.item_name, info.quantity, info.unit_price, info.total_amount])
-            ws.append([])
+        headers = ["메뉴명", "수량", "단가", "총액"]
+        if settlement.method == "item":
+            headers.append("참여자")
+        ws.append(headers)
 
-    # ✅ 정산 결과
+        for info in receipt_infos:
+            row_data = [info.item_name, info.quantity, info.unit_price, info.total_amount]
+            if settlement.method == "item":
+                participants_list = []
+                current = next(
+                    (r for r in item_assignments_list if r.get('receipt_id') == receipt.id),
+                    None
+                )
+                if current and current.get('items'):
+                    for a in current['items']:
+                        if a.get('item_name').strip() == info.item_name.strip():
+                            participants_list = a.get('participants', [])
+                            break
+                row_data.append(', '.join(participants_list))
+            ws.append(row_data)
+
+        ws.append([])
+        total = sum(info.total_amount for info in receipt_infos)
+        ws.append(["총 결제금액", total])
+        ws.append([])
+
+    overall_total_settlement = sum(settlement.result.values())
+    ws.append(["전체 정산 총액", overall_total_settlement])
+    ws.append(["정산 방식", "1/N 정산" if settlement.method == "equal" else "항목별 정산"])
+    ws.append([])
+
     ws.append(["정산 결과"])
     ws.append(["참여자", "정산 금액"])
     for name, amount in settlement.result.items():
         ws.append([name, amount])
 
-    # ✅ 반환
     response = HttpResponse(
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
